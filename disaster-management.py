@@ -1,128 +1,135 @@
 import streamlit as st
+import cv2
+import torch
+from torchvision.models.detection import fasterrcnn_resnet50_fpn
+from torchvision.transforms import functional as F
+import numpy as np
+import pandas as pd
+import plotly.express as px
+from PIL import Image
+import json
+import os
 
 # Set page config at the very beginning
 st.set_page_config(layout="wide", page_title="Disaster Management Detection")
 
-import pandas as pd
-import numpy as np
-import cv2
-import torch
-from PIL import Image
-import plotly.express as px
-from torchvision.models.detection import fasterrcnn_resnet50_fpn
-from torchvision.transforms import functional as F
-
-# Load pre-trained models
+# Load pre-trained model
 @st.cache_resource
-def load_models():
-    flood_model = fasterrcnn_resnet50_fpn(pretrained=True)
-    landslide_model = fasterrcnn_resnet50_fpn(pretrained=True)
-    damage_model = fasterrcnn_resnet50_fpn(pretrained=True)
-    erosion_model = fasterrcnn_resnet50_fpn(pretrained=True)
-    return flood_model, landslide_model, damage_model, erosion_model
+def load_model():
+    return fasterrcnn_resnet50_fpn(pretrained=True)
 
-flood_model, landslide_model, damage_model, erosion_model = load_models()
+model = load_model()
 
-# Detection functions
-def detect_objects(image, model):
-    # Convert PIL Image to tensor
-    img_tensor = F.to_tensor(image).unsqueeze(0)
+# File handling functions
+def save_detection(frame, label, confidence, box):
+    data = {
+        "frame": frame,
+        "label": int(label),
+        "confidence": float(confidence),
+        "box": box.tolist()
+    }
+    with open("detections.json", "a") as f:
+        f.write(json.dumps(data) + "\n")
+
+def get_detections():
+    if not os.path.exists("detections.json"):
+        return pd.DataFrame()
     
-    # Perform inference
+    with open("detections.json", "r") as f:
+        data = [json.loads(line) for line in f]
+    
+    df = pd.DataFrame(data)
+    df['x1'] = df['box'].apply(lambda x: x[0])
+    df['y1'] = df['box'].apply(lambda x: x[1])
+    df['x2'] = df['box'].apply(lambda x: x[2])
+    df['y2'] = df['box'].apply(lambda x: x[3])
+    return df
+
+# Detection function
+def detect_objects(frame, model):
+    img_tensor = F.to_tensor(frame).unsqueeze(0)
     model.eval()
     with torch.no_grad():
         prediction = model(img_tensor)
     
-    # Process predictions
     boxes = prediction[0]['boxes'].cpu().numpy()
     scores = prediction[0]['scores'].cpu().numpy()
     labels = prediction[0]['labels'].cpu().numpy()
     
-    # Filter predictions based on confidence threshold
     confidence_threshold = 0.5
     mask = scores > confidence_threshold
-    boxes = boxes[mask]
-    scores = scores[mask]
-    labels = labels[mask]
-    
-    return boxes, scores, labels
-
-def visualize_detection(image, boxes, scores, labels):
-    img = np.array(image)
-    for box, score, label in zip(boxes, scores, labels):
-        x1, y1, x2, y2 = box.astype(int)
-        cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 2)
-        cv2.putText(img, f"Class: {label}, Score: {score:.2f}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255,0,0), 2)
-    return img
+    return boxes[mask], scores[mask], labels[mask]
 
 # Streamlit app
-st.sidebar.title("Disaster Management Detection")
-app_mode = st.sidebar.selectbox("Choose the app mode",
-    ["Object Detection", "Data Dashboard"])
+st.title("Disaster Management Video Analysis")
 
-if app_mode == "Object Detection":
-    st.title("Disaster Management Object Detection")
-    
-    detection_type = st.sidebar.selectbox(
-        "Choose Detection Type",
-        ("Flood Detection", "Landslide Risk Assessment", "Infrastructure Damage Detection", "Coastal Erosion Monitoring")
-    )
-    
-    uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("Video Analysis")
+    uploaded_file = st.file_uploader("Choose a video file", type=["mp4", "avi", "mov"])
     
     if uploaded_file is not None:
-        image = Image.open(uploaded_file)
-        st.image(image, caption="Uploaded Image", use_column_width=True)
-        st.write("")
-        st.write("Detecting...")
+        # Save the uploaded video to a temporary file
+        with open("temp_video.mp4", "wb") as f:
+            f.write(uploaded_file.getbuffer())
         
-        try:
-            if detection_type == "Flood Detection":
-                boxes, scores, labels = detect_objects(image, flood_model)
-            elif detection_type == "Landslide Risk Assessment":
-                boxes, scores, labels = detect_objects(image, landslide_model)
-            elif detection_type == "Infrastructure Damage Detection":
-                boxes, scores, labels = detect_objects(image, damage_model)
-            elif detection_type == "Coastal Erosion Monitoring":
-                boxes, scores, labels = detect_objects(image, erosion_model)
+        # Process the video
+        video = cv2.VideoCapture("temp_video.mp4")
+        
+        # Clear previous detections
+        if os.path.exists("detections.json"):
+            os.remove("detections.json")
+        
+        frame_count = 0
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        while video.isOpened():
+            ret, frame = video.read()
+            if not ret:
+                break
             
-            result_image = visualize_detection(image, boxes, scores, labels)
-            st.image(result_image, caption="Detection Result", use_column_width=True)
-            
-            # Display detection results
-            st.write(f"Number of objects detected: {len(boxes)}")
-            for i, (box, score, label) in enumerate(zip(boxes, scores, labels)):
-                st.write(f"Object {i+1}: Class {label}, Confidence: {score:.2f}, Bounding Box: {box}")
-        except Exception as e:
-            st.error(f"An error occurred during detection: {str(e)}")
+            frame_count += 1
+            if frame_count % 10 == 0:  # Process every 10th frame
+                boxes, scores, labels = detect_objects(frame, model)
+                
+                for box, score, label in zip(boxes, scores, labels):
+                    save_detection(frame_count, label, score, box)
+                
+                # Update progress
+                progress = frame_count / video.get(cv2.CAP_PROP_FRAME_COUNT)
+                progress_bar.progress(progress)
+                status_text.text(f"Processed frame: {frame_count}")
+        
+        video.release()
+        st.success("Video processing complete!")
 
-elif app_mode == "Data Dashboard":
-    st.title("Disaster Management Data Dashboard")
+with col2:
+    st.subheader("Detection Data Dashboard")
     
-    uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
+    df = get_detections()
     
-    if uploaded_file is not None:
-        try:
-            data = pd.read_csv(uploaded_file)
-            st.write(data.head())
-            
-            # Example visualizations
-            st.subheader("Data Visualizations")
-            
-            # Bar chart
-            st.write("Bar Chart")
-            bar_chart = px.bar(data, x=data.columns[0], y=data.columns[1])
-            st.plotly_chart(bar_chart)
-            
-            # Line chart
-            st.write("Line Chart")
-            line_chart = px.line(data, x=data.columns[0], y=data.columns[1])
-            st.plotly_chart(line_chart)
-            
-            # Scatter plot
-            st.write("Scatter Plot")
-            scatter_plot = px.scatter(data, x=data.columns[0], y=data.columns[1])
-            st.plotly_chart(scatter_plot)
-        except Exception as e:
-            st.error(f"An error occurred while processing the CSV file: {str(e)}")
-
+    if not df.empty:
+        st.write(df.head())
+        
+        # Example visualizations
+        st.subheader("Data Visualizations")
+        
+        # Bar chart of object counts
+        object_counts = df['label'].value_counts()
+        bar_chart = px.bar(object_counts, x=object_counts.index, y=object_counts.values, 
+                           labels={'x': 'Object Class', 'y': 'Count'}, title="Object Counts")
+        st.plotly_chart(bar_chart, use_container_width=True)
+        
+        # Line chart of confidence over frames
+        line_chart = px.line(df, x='frame', y='confidence', color='label',
+                             title="Confidence Scores Over Frames")
+        st.plotly_chart(line_chart, use_container_width=True)
+        
+        # Scatter plot of object positions
+        scatter_plot = px.scatter(df, x='x1', y='y1', color='label', 
+                                  title="Object Positions (Top-Left Corner)")
+        st.plotly_chart(scatter_plot, use_container_width=True)
+    else:
+        st.write("No data available. Please process a video first.")
