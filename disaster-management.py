@@ -65,17 +65,19 @@ def detect_objects(frame, model):
     return boxes[mask], scores[mask], labels[mask]
 
 # Streamlit app
-st.title("Disaster Management Detection")
+st.sidebar.title("Disaster Management Detection")
 
 disaster_type = st.sidebar.selectbox(
     "Choose Detection Type",
     ("Flood Detection", "Landslide Risk Assessment", "Infrastructure Damage Detection", "Coastal Erosion Monitoring")
 )
 
+st.title(f"{disaster_type}")
+
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader(f"{disaster_type} - Video Analysis")
+    st.subheader("Video Analysis")
     uploaded_file = st.file_uploader("Choose a video file", type=["mp4", "avi", "mov"])
     
     if uploaded_file is not None:
@@ -118,7 +120,7 @@ with col1:
         st.success("Video processing complete!")
 
 with col2:
-    st.subheader(f"{disaster_type} - Detection Data Dashboard")
+    st.subheader("Detection Data Dashboard")
     
     df = get_detections(disaster_type.lower().replace(' ', '_'))
     
