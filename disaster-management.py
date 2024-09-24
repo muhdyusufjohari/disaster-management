@@ -13,29 +13,33 @@ import os
 # Set page config at the very beginning
 st.set_page_config(layout="wide", page_title="Disaster Management Detection")
 
-# Load pre-trained model
+# Load pre-trained models
 @st.cache_resource
-def load_model():
-    return fasterrcnn_resnet50_fpn(pretrained=True)
+def load_models():
+    flood_model = fasterrcnn_resnet50_fpn(pretrained=True)
+    landslide_model = fasterrcnn_resnet50_fpn(pretrained=True)
+    damage_model = fasterrcnn_resnet50_fpn(pretrained=True)
+    erosion_model = fasterrcnn_resnet50_fpn(pretrained=True)
+    return flood_model, landslide_model, damage_model, erosion_model
 
-model = load_model()
+flood_model, landslide_model, damage_model, erosion_model = load_models()
 
 # File handling functions
-def save_detection(frame, label, confidence, box):
+def save_detection(frame, label, confidence, box, disaster_type):
     data = {
         "frame": frame,
         "label": int(label),
         "confidence": float(confidence),
         "box": box.tolist()
     }
-    with open("detections.json", "a") as f:
+    with open(f"{disaster_type}_detections.json", "a") as f:
         f.write(json.dumps(data) + "\n")
 
-def get_detections():
-    if not os.path.exists("detections.json"):
+def get_detections(disaster_type):
+    if not os.path.exists(f"{disaster_type}_detections.json"):
         return pd.DataFrame()
     
-    with open("detections.json", "r") as f:
+    with open(f"{disaster_type}_detections.json", "r") as f:
         data = [json.loads(line) for line in f]
     
     df = pd.DataFrame(data)
@@ -61,25 +65,27 @@ def detect_objects(frame, model):
     return boxes[mask], scores[mask], labels[mask]
 
 # Streamlit app
-st.title("Disaster Management Video Analysis")
+st.title("Disaster Management Detection")
+
+disaster_type = st.sidebar.selectbox(
+    "Choose Detection Type",
+    ("Flood Detection", "Landslide Risk Assessment", "Infrastructure Damage Detection", "Coastal Erosion Monitoring")
+)
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Video Analysis")
+    st.subheader(f"{disaster_type} - Video Analysis")
     uploaded_file = st.file_uploader("Choose a video file", type=["mp4", "avi", "mov"])
     
     if uploaded_file is not None:
-        # Save the uploaded video to a temporary file
         with open("temp_video.mp4", "wb") as f:
             f.write(uploaded_file.getbuffer())
         
-        # Process the video
         video = cv2.VideoCapture("temp_video.mp4")
         
-        # Clear previous detections
-        if os.path.exists("detections.json"):
-            os.remove("detections.json")
+        if os.path.exists(f"{disaster_type.lower().replace(' ', '_')}_detections.json"):
+            os.remove(f"{disaster_type.lower().replace(' ', '_')}_detections.json")
         
         frame_count = 0
         progress_bar = st.progress(0)
@@ -92,12 +98,18 @@ with col1:
             
             frame_count += 1
             if frame_count % 10 == 0:  # Process every 10th frame
-                boxes, scores, labels = detect_objects(frame, model)
+                if disaster_type == "Flood Detection":
+                    boxes, scores, labels = detect_objects(frame, flood_model)
+                elif disaster_type == "Landslide Risk Assessment":
+                    boxes, scores, labels = detect_objects(frame, landslide_model)
+                elif disaster_type == "Infrastructure Damage Detection":
+                    boxes, scores, labels = detect_objects(frame, damage_model)
+                elif disaster_type == "Coastal Erosion Monitoring":
+                    boxes, scores, labels = detect_objects(frame, erosion_model)
                 
                 for box, score, label in zip(boxes, scores, labels):
-                    save_detection(frame_count, label, score, box)
+                    save_detection(frame_count, label, score, box, disaster_type.lower().replace(' ', '_'))
                 
-                # Update progress
                 progress = frame_count / video.get(cv2.CAP_PROP_FRAME_COUNT)
                 progress_bar.progress(progress)
                 status_text.text(f"Processed frame: {frame_count}")
@@ -106,28 +118,24 @@ with col1:
         st.success("Video processing complete!")
 
 with col2:
-    st.subheader("Detection Data Dashboard")
+    st.subheader(f"{disaster_type} - Detection Data Dashboard")
     
-    df = get_detections()
+    df = get_detections(disaster_type.lower().replace(' ', '_'))
     
     if not df.empty:
         st.write(df.head())
         
-        # Example visualizations
         st.subheader("Data Visualizations")
         
-        # Bar chart of object counts
         object_counts = df['label'].value_counts()
         bar_chart = px.bar(object_counts, x=object_counts.index, y=object_counts.values, 
                            labels={'x': 'Object Class', 'y': 'Count'}, title="Object Counts")
         st.plotly_chart(bar_chart, use_container_width=True)
         
-        # Line chart of confidence over frames
         line_chart = px.line(df, x='frame', y='confidence', color='label',
                              title="Confidence Scores Over Frames")
         st.plotly_chart(line_chart, use_container_width=True)
         
-        # Scatter plot of object positions
         scatter_plot = px.scatter(df, x='x1', y='y1', color='label', 
                                   title="Object Positions (Top-Left Corner)")
         st.plotly_chart(scatter_plot, use_container_width=True)
