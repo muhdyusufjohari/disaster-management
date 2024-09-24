@@ -1,4 +1,8 @@
 import streamlit as st
+
+# Set page config at the very beginning
+st.set_page_config(layout="wide", page_title="Disaster Management Detection")
+
 import pandas as pd
 import numpy as np
 import cv2
@@ -52,8 +56,6 @@ def visualize_detection(image, boxes, scores, labels):
     return img
 
 # Streamlit app
-st.set_page_config(layout="wide", page_title="Disaster Management Detection")
-
 st.sidebar.title("Disaster Management Detection")
 app_mode = st.sidebar.selectbox("Choose the app mode",
     ["Object Detection", "Data Dashboard"])
@@ -74,22 +76,25 @@ if app_mode == "Object Detection":
         st.write("")
         st.write("Detecting...")
         
-        if detection_type == "Flood Detection":
-            boxes, scores, labels = detect_objects(image, flood_model)
-        elif detection_type == "Landslide Risk Assessment":
-            boxes, scores, labels = detect_objects(image, landslide_model)
-        elif detection_type == "Infrastructure Damage Detection":
-            boxes, scores, labels = detect_objects(image, damage_model)
-        elif detection_type == "Coastal Erosion Monitoring":
-            boxes, scores, labels = detect_objects(image, erosion_model)
-        
-        result_image = visualize_detection(image, boxes, scores, labels)
-        st.image(result_image, caption="Detection Result", use_column_width=True)
-        
-        # Display detection results
-        st.write(f"Number of objects detected: {len(boxes)}")
-        for i, (box, score, label) in enumerate(zip(boxes, scores, labels)):
-            st.write(f"Object {i+1}: Class {label}, Confidence: {score:.2f}, Bounding Box: {box}")
+        try:
+            if detection_type == "Flood Detection":
+                boxes, scores, labels = detect_objects(image, flood_model)
+            elif detection_type == "Landslide Risk Assessment":
+                boxes, scores, labels = detect_objects(image, landslide_model)
+            elif detection_type == "Infrastructure Damage Detection":
+                boxes, scores, labels = detect_objects(image, damage_model)
+            elif detection_type == "Coastal Erosion Monitoring":
+                boxes, scores, labels = detect_objects(image, erosion_model)
+            
+            result_image = visualize_detection(image, boxes, scores, labels)
+            st.image(result_image, caption="Detection Result", use_column_width=True)
+            
+            # Display detection results
+            st.write(f"Number of objects detected: {len(boxes)}")
+            for i, (box, score, label) in enumerate(zip(boxes, scores, labels)):
+                st.write(f"Object {i+1}: Class {label}, Confidence: {score:.2f}, Bounding Box: {box}")
+        except Exception as e:
+            st.error(f"An error occurred during detection: {str(e)}")
 
 elif app_mode == "Data Dashboard":
     st.title("Disaster Management Data Dashboard")
@@ -97,24 +102,27 @@ elif app_mode == "Data Dashboard":
     uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
     
     if uploaded_file is not None:
-        data = pd.read_csv(uploaded_file)
-        st.write(data.head())
-        
-        # Example visualizations
-        st.subheader("Data Visualizations")
-        
-        # Bar chart
-        st.write("Bar Chart")
-        bar_chart = px.bar(data, x=data.columns[0], y=data.columns[1])
-        st.plotly_chart(bar_chart)
-        
-        # Line chart
-        st.write("Line Chart")
-        line_chart = px.line(data, x=data.columns[0], y=data.columns[1])
-        st.plotly_chart(line_chart)
-        
-        # Scatter plot
-        st.write("Scatter Plot")
-        scatter_plot = px.scatter(data, x=data.columns[0], y=data.columns[1])
-        st.plotly_chart(scatter_plot)
+        try:
+            data = pd.read_csv(uploaded_file)
+            st.write(data.head())
+            
+            # Example visualizations
+            st.subheader("Data Visualizations")
+            
+            # Bar chart
+            st.write("Bar Chart")
+            bar_chart = px.bar(data, x=data.columns[0], y=data.columns[1])
+            st.plotly_chart(bar_chart)
+            
+            # Line chart
+            st.write("Line Chart")
+            line_chart = px.line(data, x=data.columns[0], y=data.columns[1])
+            st.plotly_chart(line_chart)
+            
+            # Scatter plot
+            st.write("Scatter Plot")
+            scatter_plot = px.scatter(data, x=data.columns[0], y=data.columns[1])
+            st.plotly_chart(scatter_plot)
+        except Exception as e:
+            st.error(f"An error occurred while processing the CSV file: {str(e)}")
 
