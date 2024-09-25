@@ -119,6 +119,10 @@ with col1:
         video.release()
         st.success("Video processing complete!")
 
+        # Display the processed video
+        st.subheader("Processed Video")
+        st.video("temp_video.mp4")
+
 with col2:
     st.subheader("Detection Data Dashboard")
     
@@ -129,15 +133,22 @@ with col2:
         
         st.subheader("Data Visualizations")
         
-        object_counts = df['label'].value_counts()
-        bar_chart = px.bar(object_counts, x=object_counts.index, y=object_counts.values, 
-                           labels={'x': 'Object Class', 'y': 'Count'}, title="Object Counts")
-        st.plotly_chart(bar_chart, use_container_width=True)
+        # Create a 16:9 layout for the dashboard
+        col1, col2 = st.columns(2)
         
-        line_chart = px.line(df, x='frame', y='confidence', color='label',
-                             title="Confidence Scores Over Frames")
-        st.plotly_chart(line_chart, use_container_width=True)
+        with col1:
+            object_counts = df['label'].value_counts()
+            bar_chart = px.bar(object_counts, x=object_counts.index, y=object_counts.values, 
+                               labels={'x': 'Object Class', 'y': 'Count'}, title="Object Counts")
+            st.plotly_chart(bar_chart, use_container_width=True)
         
+        with col2:
+            line_chart = px.line(df, x='frame', y='confidence', color='label',
+                                 title="Confidence Scores Over Frames")
+            st.plotly_chart(line_chart, use_container_width=True)
+
+        # Add a third column for the scatter plot
+        st.subheader("Object Positions")
         scatter_plot = px.scatter(df, x='x1', y='y1', color='label', 
                                   title="Object Positions (Top-Left Corner)")
         st.plotly_chart(scatter_plot, use_container_width=True)
